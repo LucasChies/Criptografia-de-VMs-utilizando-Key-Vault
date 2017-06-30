@@ -1,0 +1,58 @@
+#Login Azure Account
+Login-AzureRmAccount
+
+#Define Veriables
+$keyVaultName = 'kv-handson'
+$RGName = 'cloudc'
+$location = 'Brazil South'
+$aadClientSecret = 'cloudcClientSec'
+$appDisplayName = 'kvhandsonEncryptApp'
+
+#Create New RG
+New-AzureRmResourceGroup -Name $RGName -Location $location
+ 
+#Create Key Vault
+New-AzureRmKeyVault -VaultName $keyVaultName -ResourceGroupName $RGName -Location $location
+
+#Enabled For Disk Encryption
+Set-AzureRmKeyVaultAccessPolicy -VaultName $keyVaultName -ResourceGroupName $RGName -EnabledForDiskEncryption
+
+#Check to Disk Encryption
+Get-AzureRmKeyVault -VaultName $keyVaultName
+
+#Register AAD Application
+$aadApp = New-AzureRmADApplication -DisplayName $appDisplayName -HomePage 'http://NOMEAPP' -IdentifierUris 'http://uriContosoEncryptApp' -Password $aadClientSecret
+
+#Show App Information
+$aadApp
+
+#Define Veriables to assign Key Vault to new app created
+$appID = $aadApp.ApplicationId
+$aadServicePrincipal = New-AzureRmADServicePrincipal -ApplicationId $appID
+
+#Assign Key Vault to new app created 
+Set-AzureRmKeyVaultAccessPolicy -VaultName $keyVaultName -ServicePrincipalName $appID -PermissionsToKeys all -PermissionsToSecrets all
+
+<!-- Se você já tiver uma VM, não é necessário criar outra, basta executar o comando para encriptação --!>
+
+# Create a virtual machine configuration
+$vmConfig = New-AzureRmVMConfig -VMName keyvaultvm -VMSize Standard_D1_v2 | `
+    Set-AzureRmVMOperatingSystem -Windows -ComputerName myVM -Credential $cred | `
+    Set-AzureRmVMSourceImage -PublisherName MicrosoftWindowsServer -Offer WindowsServer `
+    -Skus 2016-Datacenter -Version latest | Add-AzureRmVMNetworkInterface -Id $nic.Id
+
+New-AzureRmVM -ResourceGroupName cloudc -Location Brazil South -VM $vmConfig
+
+// encript OS Disk
+
+#Define Veriables to assign Key Vault to new app created
+$keyvault = Get-AzureRmKeyVault -VaultName $keyVaultName -ResourceGroupName $RGName
+$keyVaultURI = $keyvault.VaultUri
+$keyvaultRID = $keyvault.ResourceId
+$kekURI = $keyvault
+$vmName = (Get-AzureRmVM -ResourceGroupName $RGName -Name kvvm-encript).Name
+
+#encript OS Disk
+Set-AzureRmVMDiskEncryptionExtension -ResourceGroupName $rgName -VMName $vmName -AadClientID $aadapp.ApplicationId -AadClientSecret $aadClientSecret -DiskEncryptionKeyVaultUrl $keyVaultURI -DiskEncryptionKeyVaultId $keyvaultRID -Verbose
+
+
